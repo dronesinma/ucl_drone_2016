@@ -1,0 +1,11 @@
+# Blacklist
+build/*
+devel/*
+backup
+src/*
+scr/ucl_drone/doc/*
+*~
+
+# Whitelist
+!src/ucl_drone
+!src/ucl_drone_gui
