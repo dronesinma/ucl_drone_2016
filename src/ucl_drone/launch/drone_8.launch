@@ -3,7 +3,7 @@
 <launch>
   <!-- IPv4 address of your drones -->
   <arg name="drone_name" default="drone_5" />
-  <arg name="mb1_ip" default="192.168.1.8" />
+  <arg name="mb1_ip" default="192.168.1.1" />
   <!-- Ultrasound frequency (7 or 8). -->
   <arg name="freq" default="8" />
 
@@ -104,15 +104,15 @@
         <param name="stop_if_lost" value="true" />
     </node>
 
-    <!-- <node name="ucl_drone_path_planning" pkg="ucl_drone" type="path_planning" output="screen">
+    <node name="ucl_drone_path_planning" pkg="ucl_drone" type="path_planning_custom" output="screen">
       <param name="drone_prefix" value="motherboard1/"/>
     </node>
-    <node name="ucl_drone_controller" pkg="ucl_drone" type="controller" output="screen">
+    <node name="ucl_drone_controller" pkg="ucl_drone" type="controller_custom" output="screen">
       <param name="drone_prefix" value="motherboard1/"/>
     </node>
     <node name="ucl_drone_strategy" pkg="ucl_drone" type="strategy" output="screen">
         <param name="drone_name" value="ucl_$(arg drone_name)" />
-    </node> -->
+    </node>
 </group>
 
 </launch>

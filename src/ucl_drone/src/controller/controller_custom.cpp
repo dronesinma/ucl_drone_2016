@@ -1,18 +1,15 @@
-/*!
+/*
  *  This file is part of ucl_drone 2016.
- *  For more information, refer
- *  to the corresponding header file.
+ *  For more information, refer to the corresponding header file.
  *
- * This file receives information from path_planning and pose_estimation and publishes mainly in
- * cmd_vel to communicate with the drone.
- * It controls the position of the drone.
+ *  TODO
  *
- *  \authors Julien Gerardy & Felicien Schiltz
+ *  \authors
  *  \date 2016
  *
  */
 
-#include "ucl_drone/controller.h"
+#include "ucl_drone/controller.h"  // TODO : create
 
 static bool urgency_signal = false;  // true when Ctrl-C (Emergency stop)
 
@@ -66,7 +63,7 @@ BasicController::BasicController()
   // Here are the parameters used before we got the first pose_ref from the path_planning
 
   // Parameters
-  alt_ref = 1.0;  // default altitude reference (unit: m)
+  alt_ref = 1.0;  // default reference altitude (unit: m)
   x_ref = 0.0;
   y_ref = 0.0;
   yaw_ref = 0.0;
@@ -103,7 +100,7 @@ BasicController::BasicController()
   // integral_l_error = 0;
 
   // Limitation of the rotZ speed in order to stay stable.
-  anti_windup_yaw = 0.5;
+  anti_windup_yaw = 0.1;
 
   // Initialization of some variables useful for regulation (see below).
   alt_desired_old = 0;
@@ -118,7 +115,6 @@ BasicController::~BasicController()
 }
 
 // From services
-
 bool BasicController::startControl(std_srvs::Empty::Request& req, std_srvs::Empty::Response& res)
 {
   ROS_INFO("calling service start");
@@ -154,62 +150,23 @@ void BasicController::reguXY(double* xvel_cmd, double* yvel_cmd, double x_mes, d
                              double x_desired, double y_desired, double yaw,
                              double regu_new_time_xy)
 {
-  // printf("reguXY x_desired : %lf y_desired : %lf \n", x_desired, y_desired);
-  double p_term_l;
-  double d_term_l = 0;  // In case time_diff = 0
-  double i_term_l;
-  double p_term_f;
-  double d_term_f = 0;  // In case time_diff = 0
-  double i_term_f;
-
-  double time_difference = (regu_new_time_xy - regu_old_time_xy);
-
   // If navdata has the same timestamp, send the last command (in order to avoid null division)
-  if (time_difference != 0)
-  {
-    if (x_desired_old != x_desired ||
-        y_desired_old != y_desired)  // If pose_ref has changed, integral error is reset.
-    {
-      integral_xy_error = 0;
-    }
-    double dist = sqrt(pow((x_mes - x_desired), 2) + pow((y_mes - y_desired), 2));
-    dist_old = dist;
-    double delta_x = x_desired - x_mes;
-    double delta_y = y_desired - y_mes;
-    regu_old_time_xy = regu_new_time_xy;
 
-    // axis transformation (from absolute axis to drone axis in order to give it velocities
-    // commands)
-    double c_theta = cos(yaw);
-    double s_theta = sin(yaw);
+  double dist = sqrt(pow((x_mes - x_desired), 2) + pow((y_mes - y_desired), 2));
+  double delta_x = x_desired - x_mes;
+  double delta_y = y_desired - y_mes;
 
-    // Proportional term
+  // axis transformation (from absolute axis to drone axis in order to give it velocities
+  // commands)
+  double c_theta = cos(yaw);
+  double s_theta = sin(yaw);
 
-    p_term_f = delta_x * c_theta - delta_y * s_theta;
-    p_term_l = delta_x * s_theta + delta_y * c_theta;
+  double term_f = (delta_x * c_theta - delta_y * s_theta) / dist * 0.05;  // 0.05
+  double term_l = (delta_x * s_theta + delta_y * c_theta) / dist * 0.05;
 
-    // Differential term
-    d_term_f = (p_term_f - p_term_f_old) / time_difference;
-    d_term_l = (p_term_l - p_term_l_old) / time_difference;
-    p_term_f_old = p_term_f;
-    p_term_l_old = p_term_l;
-
-    // Integral term
-    i_term_f += p_term_f * time_difference;
-    i_term_l += p_term_l * time_difference;
-    last_vel_x_command = (Kp_plan * p_term_f + i_term_f * Ki_plan + Kd_plan * d_term_f);
-    last_vel_y_command = (Kp_plan * p_term_l + i_term_l * Ki_plan + Kd_plan * d_term_l);
-
-    // Velocities command in the drone repere.
-    *xvel_cmd = last_vel_x_command;
-    *yvel_cmd = last_vel_y_command;
-  }
-
-  else
-  {
-    *xvel_cmd = last_vel_x_command;
-    *yvel_cmd = last_vel_y_command;
-  }
+  // Velocities command in the drone repere.
+  *xvel_cmd = term_f;
+  *yvel_cmd = term_l;
 }
 
 // Regulation in altitude, according to the Z axis.
@@ -249,11 +206,20 @@ void BasicController::reguAltitude(double* zvel_cmd, double alt_mes, double alt_
 
     // Integral term
 
-    i_term = integral_alt_error;
+    i_term = 0;  // integral_alt_error;
 
     // Z velocity command sent to the drone
 
     last_vel_z_command = (Kp_alt * p_term + i_term * Ki_alt + Kd_alt * d_term);
+
+    if (last_vel_z_command > anti_windup_yaw)
+    {
+      last_vel_z_command = anti_windup_yaw;
+    }
+    else if (last_vel_z_command < -anti_windup_yaw)
+    {
+      last_vel_z_command = -anti_windup_yaw;
+    }
 
     *zvel_cmd = last_vel_z_command;
     // printf("zvel_cmd: %lf \n", last_vel_z_command);
@@ -310,7 +276,7 @@ void BasicController::reguYaw(double* yawvel_cmd, double yaw_mes, double yaw_des
       old_delta_yaw = delta_yaw;
     }
     integral_yaw_error += delta_yaw * time_difference;
-    i_term = integral_yaw_error;
+    i_term = 0;  // integral_yaw_error;
     new_vel_yaw_cmd = (Kp_yaw * p_term + i_term * Ki_yaw + Kd_yaw * d_term);
 
     // rotational speed limitation (wrongly called anti_windup).
@@ -358,11 +324,10 @@ void BasicController::sendVelToDrone(double pitch, double roll, double yaw_vel, 
 // takes this message and put it in a variable where it will be used in the other functions.
 void BasicController::poseCb(const ucl_drone::Pose3D::ConstPtr posePtr)
 {
-  lastPoseReceived = *posePtr;
+  lastPoseReceived = *posePtr;  // TODO : put a rate of 1/5 in the pose estimation node
+  // lastPoseReceivedAvailable = true;
 }
 
-// This function is called when this node receives a message from the topic "poseref". So it
-// takes this message and put it in a variable where it will be used in the other functions.
 void BasicController::poseRefCb(const ucl_drone::PoseRef::ConstPtr poseRefPtr)
 {
   lastPoseRefReceived = *poseRefPtr;
@@ -377,6 +342,14 @@ void BasicController::controlLoop()
   double yawvel_cmd;
   double zvel_cmd;
 
+  // Compute a new reference setpoint if a visual pose estimation has arrived
+  // if (lastPoseReceivedAvailable)
+  // {
+  //   lastPoseReceivedAvailable = false;
+  // }
+
+  // Do here what is inside the python script
+
   reguXY(&xvel_cmd, &yvel_cmd, lastPoseReceived.x, lastPoseReceived.y, lastPoseRefReceived.x,
          lastPoseRefReceived.y, lastPoseReceived.rotZ,
          lastPoseReceived.header.stamp.sec + lastPoseReceived.header.stamp.nsec / pow(10, 9));
@@ -384,8 +357,15 @@ void BasicController::controlLoop()
           lastPoseReceived.header.stamp.sec + lastPoseReceived.header.stamp.nsec / pow(10, 9));
   reguAltitude(&zvel_cmd, lastPoseReceived.z, lastPoseRefReceived.z,
                lastPoseReceived.header.stamp.sec + lastPoseReceived.header.stamp.nsec / pow(10, 9));
-  // sendVelToDrone(0,0,0,zvel_cmd,false);                 //Test
+
+  zvel_cmd = 0;
   sendVelToDrone(xvel_cmd, yvel_cmd, yawvel_cmd, zvel_cmd, false);  // ALL
+
+  ros::Duration(0.7).sleep();
+
+  sendVelToDrone(0, 0, 0, 0, true);
+
+  ros::Duration(1).sleep();
 
   // used if pathplanning asks to stop the control of the drone.
   if (lastPoseRefReceived.landAndStop)
@@ -419,19 +399,19 @@ static void basicSigintHandler(int sig)
   urgency_signal = true;
 }
 
-// Main function, launching the controLoop function.
+//! Main function, launching the controlLoop function.
 int main(int argc, char** argv)
 {
-  ros::init(argc, argv, "controller", ros::init_options::NoSigintHandler);
+  ros::init(argc, argv, "controller_custom", ros::init_options::NoSigintHandler);
   signal(SIGINT, basicSigintHandler);
   BasicController bc;
-  ROS_INFO_STREAM("controller started!");
+  ROS_INFO_STREAM("controller custom started!");
+  ros::Rate r(100);
   while (ros::ok())
   {
-    TIC(control);
     bc.controlLoop();
-    TOC(control, "control");
-    ros::spinOnce();  // if we dont want this we have to place callback and services in threads
+    ros::spinOnce();
+    r.sleep();
   }
   return 0;
 }

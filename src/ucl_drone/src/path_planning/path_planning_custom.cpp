@@ -57,7 +57,7 @@ void PathPlanning::reset()
 {
   next_x = 0;
   next_y = 0;
-  next_z = 1;
+  next_z = 1.1;
   next_rotZ = 0;
   i = 0;
   landing = false;
@@ -91,7 +91,6 @@ void PathPlanning::publish_poseref()
 
 // This function is called when this node receives a message from the topic "pose_estimation". So it
 // takes this message and put it in a variable where it will be used in the other functions.
-
 void PathPlanning::poseCb(const ucl_drone::Pose3D::ConstPtr posePtr)
 {
   lastPoseReceived = *posePtr;
@@ -99,34 +98,59 @@ void PathPlanning::poseCb(const ucl_drone::Pose3D::ConstPtr posePtr)
 
 // This function is called when this node receives a message from the topic "strategy". So it
 // takes this message and put it in a variable where it will be used in the other functions.
-
 void PathPlanning::strategyCb(const ucl_drone::StrategyMsg::ConstPtr strategyPtr)
 {
   lastStrategyReceived = *strategyPtr;
 }
 
-// First approach to explore a map. The drones makes a kind of labyrinth
+template < typename T >
+int sgn(T val)
+{
+  return (T(0) < val) - (val < T(0));
+}
 
+// First approach to explore a map. The drones makes a kind of labyrinth
 bool PathPlanning::xy_desired()
 {
   // The drone is considered as "arrived on poseref if it in a radius of 0.35m"
   if (sqrt((lastPoseReceived.x - next_x) * (lastPoseReceived.x - next_x) +
-           (lastPoseReceived.y - next_y) * (lastPoseReceived.y - next_y)) < 0.35)
+           (lastPoseReceived.y - next_y) * (lastPoseReceived.y - next_y) +
+           (lastPoseReceived.z - next_z) * (lastPoseReceived.z - next_z)) < 0.25)
   {
     printf("i: %d\n", i);
-    if (i % 2 == 0)
+    // square
+    //     double labyrinth_x[] = {0, 1.6, 1.6, 0, 0};  //{0, 1, 2, 2, 2, 1, 0, 0, 0};
+    //     double labyrinth_y[] = {0, 0, 1.3, 1.3, 0};  //{0, 0, 0, 0.65, 1.3, 1.3, 1.3, 0.65, 0};
+
+    // ligne droite
+    // double labyrinth_x[] = {0, 0, 0, 0, 0, 0, 0, 0, 0};
+    // double labyrinth_y[] = {0, -1, -2, -3, -4, -3, -2, -1, 0};
+
+    // sur place
+    double labyrinth_x[] = {0};
+    double labyrinth_y[] = {0};
+
+    if (i >= sizeof(labyrinth_x) / sizeof(labyrinth_x[0]))
     {
-      next_x += 1;
+      int j = i - sizeof(labyrinth_x) / sizeof(labyrinth_x[0]);
+
+      double descente_z[] = {1.1};  //{0.9};
+
+      if (j >= sizeof(descente_z) / sizeof(descente_z[0]))
+      {
+        // landing = true;
+        return true;
+      }
+
+      next_z = descente_z[j];
     }
-    else if (i % 4 == 1)
+    else
     {
-      next_y += 1;
-    }
-    else  //(i%4==3)
-    {
-      next_y -= 1;
+      next_x = labyrinth_x[i];
+      next_y = labyrinth_y[i];
     }
     i++;
+
     return true;
   }
   else
@@ -141,7 +165,6 @@ bool PathPlanning::xy_desired()
 // 1 means seen/explored
 // 2 means border cell explored (there is cells behind but we haven't seen them yet)
 // 3 means wall cell detected
-
 void PathPlanning::InitializeGrid()
 {
   // Set all the cells to "unexplored"
@@ -159,7 +182,6 @@ void PathPlanning::InitializeGrid()
 // function has to be replaced by a true wall identification function via a camera and image process
 // (for example). This function has been made in order where it can easily be replaced by something
 // real and with more performances.
-
 bool PathPlanning::ThereIsAWallCell(int i, int j)  // modified
 {
   yfromcell2 = -((j / 10.0) - SIDE / 2.0);
@@ -210,7 +232,7 @@ void PathPlanning::UpdateMap(double x, double y)
   ROS_INFO("I'm in the updatemap function after absOrdMinMax function");
   printf("myOrdMin: %d     myOrdMax: %d      myAbsMin: %d    myAbsMax: %d   \n", myOrdMin, myOrdMax,
          myAbsMin, myAbsMax);
-  ucl_drone::cellUpdate cellUpdateMsg;
+
   for (i = myAbsMin; i < myAbsMax; i++)
   {
     for (j = myOrdMin; j < myOrdMax; j++)
@@ -325,7 +347,7 @@ int main(int argc, char** argv)
   while (ros::ok())
   {
     TIC(path);
-    if (myPath.lastStrategyReceived.type == 1.0)  // This corresponds to the takeoff strategy.
+    if (myPath.lastStrategyReceived.type == 1.0)
     {
       myPath.takeoff = true;
       myPath.publish_poseref();
@@ -336,12 +358,12 @@ int main(int argc, char** argv)
     // just have to put 2.0 to the one we want and other numbers to the others.
 
     // This function calls the labyrinth pathplanning.
-    else if (myPath.lastStrategyReceived.type == 7.0)
+    else if (myPath.lastStrategyReceived.type == 2.0)
     {
       if (myPath.xy_desired() == true)
       {
         myPath.takeoff = true;
-        ros::Duration(5).sleep();
+        ros::Duration(1.5).sleep();
         myPath.publish_poseref();
       }
     }
@@ -398,7 +420,7 @@ int main(int argc, char** argv)
 
     // Strategy = Seek (explore), the drone initializes the grid. Then this is the
     // advanced_xy_desired function that tells the drone where to go.
-    else if (myPath.lastStrategyReceived.type == 2.0)
+    else if (myPath.lastStrategyReceived.type == 7.0)
     {
       if (!myPath.gridInitialized)
       {
@@ -441,7 +463,6 @@ int main(int argc, char** argv)
     ros::spinOnce();
     r.sleep();
   }
-
   return 0;
 }
 
